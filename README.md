@@ -1,311 +1,226 @@
-# AI Laboratory for Scientific Research
+# AI-for-Research
 
-A virtual laboratory of AI agents designed to facilitate collaborative scientific research discussions and planning. This project is a very rough prototype.
+An evidence-first, local-paper multi-agent system for AI-for-Science research.
 
-> **Note on Paper Access**: The bioRxiv search functionality is limited and sometimes unstable due to API constraints. To address this limitation, a new `/read_folder` command has been added, allowing agents to read and discuss papers from a local folder. This provides a more reliable alternative when online searches don't return the desired results.
+The project turns a research question and a local PDF corpus into a traceable research report:
 
-## Overview
-
-This project creates a terminal-based application that simulates a laboratory environment with multiple AI agents, each with different specialties. The lab provides a space for:
-
-- Collaborative discussions among AI agents and users
-- Analysis of scientific papers and documents
-- Research planning and ideation
-- Cross-disciplinary knowledge synthesis
-- Formalized multi-round discussions on focused topics
-
-## Features
-
-- **Multi-Agent Environment**: Create a customizable team of AI expert agents with different specialties
-- **Direct Messaging**: Address specific agents using @mention syntax
-- **Research Analysis**: Analysis of scientific papers and research topics
-- **Enhanced Collaboration**: Agents directly engage with each other and follow up on questions
-- **Visual Conversation Mapping**: Track inter-agent communication patterns
-- **Structured Discussions**: Run formal multi-round discussions on specific topics
-- **Research Integration**: Connect to arXiv and bioRxiv for paper summaries
-- **Highly Customizable**: Configure agents, specialties, and personalities via YAML
-
-## Installation
-
-1. Clone this repository
-2. Install dependencies:
-
-```bash
-pip install -r requirements.txt
+```text
+research question
+        ↓
+planner → local PDF loader → paper reader → hypothesis generator
+                                                ↓
+                         critical reviewer → scientific director
+                                                ↓
+                 evidence-backed report + limitations + next experiment
 ```
 
-## Configuration
+The primary demo question is:
 
-Before running the application, set up your configuration file:
+> What evidence supports partial representational alignment between human EEG and LLM reasoning states?
 
-1. Copy the example configuration file:
-   ```bash
-   cp config.yaml.example config.yaml
-   ```
+This is a research-engineering demo, not an autonomous scientific authority. The system is designed to make model contributions inspectable, source-linked, reproducible, and easy to challenge.
 
-2. Edit the `config.yaml` file:
-   - Keep your Anthropic API key for Ada (Claude)
-   - Fill missing values in `api_keys.groq`, `api_keys.qwen`, `api_keys.zhipu`, and `api_keys.gemini`
-   - Lea uses GPT-OSS-120B on Groq; Emmy uses Gemini 3.8 Flash on Google; Marie uses GLM-4.7-Flash on BigModel; Qwen uses DashScope (Beijing)
-   - Customize your user name
-   - Modify the AI agents and their specialties if desired
+## Why this project
 
-See [the five-model setup guide](MULTI_MODEL_SETUP.md) for model assignments,
-key locations, environment variables, and limitations. Each agent now has
-its own `provider` and `model`. Optional `system_prompt` instructions apply to
-every response workflow. Legacy single-Anthropic and NVIDIA configurations still work.
+Many multi-agent demos optimize for a fluent final answer. This project optimizes for an auditable path to that answer:
 
-Check configuration without making API calls:
+- papers are loaded locally by Python rather than guessed or discovered by an LLM;
+- each evidence item keeps its `paper_id` and one-based PDF page;
+- agents exchange JSON-shaped state instead of free-form conversation;
+- hypotheses are generated only after evidence extraction;
+- a critic can flag unsupported claims and trigger at most one bounded repair;
+- the final report is blocked unless its citations resolve to loaded evidence;
+- live calls write content-addressed cache entries and JSONL trace records;
+- replay mode reconstructs a run without contacting model providers.
 
-```bash
-python -m src.main --config config.yaml --check-config
+## Agent architecture
+
+The PDF Loader is deterministic infrastructure. The other five stages are model-backed roles:
+
+| Stage | Provider / model | Responsibility |
+| --- | --- | --- |
+| Planner | DashScope / Qwen3.8-Max | Decompose the question into subquestions, keywords, and analysis criteria |
+| PDF Loader | Python / PyPDF2 | Extract page-aware text from local PDFs; no model call |
+| Paper Reader | DashScope / Qwen3.8-Max | Extract concise, page-cited evidence from each paper |
+| Hypothesis Generator | Groq / GPT-OSS-120B | Turn evidence into mechanisms and testable predictions |
+| Critical Reviewer | Anthropic / Claude Sonnet 4.6 | Find unsupported claims, missing controls, and methodological weaknesses |
+| Scientific Director | Anthropic / Claude Sonnet 4.6 | Synthesize the final answer, limitations, and next experiment |
+
+All model-backed stages use the shared provider abstraction in `src/workflow.py`. API keys are read from the local `.env` file or the process environment; they are not required in Git-tracked YAML.
+
+## Shared state and evidence gate
+
+The workflow passes one JSON-serializable `ResearchState` through the pipeline. In addition to the planner's `plan`, it contains:
+
+```python
+ResearchState(
+    question: str,
+    papers: list,
+    evidence: list,
+    hypotheses: list,
+    critique: dict,
+    final_report: dict,
+)
 ```
 
-To get an Anthropic API key:
-1. Go to https://console.anthropic.com/
-2. Sign up or log in to your account
-3. Navigate to the API Keys section
-4. Create a new API key
-5. Copy the key and paste it in your config.yaml file
+An evidence record must contain:
 
-## Usage
-
-Run the application with:
-
-```bash
-python -m src.main --config config.yaml
+```json
+{
+  "claim_id": "E1",
+  "claim": "The study reports partial alignment during reasoning",
+  "quote": "Original quotation",
+  "paper_id": "paper_02",
+  "page": 4,
+  "confidence": 0.86
+}
 ```
 
-### Interaction Features
+The same contract is represented in [schemas/research_state.schema.json](schemas/research_state.schema.json) and enforced again in [src/state.py](src/state.py). Claims without a known paper and page cannot pass the final report validation. The current Reader stage is called separately for each local paper and requires evidence coverage from at least two papers before hypotheses are generated.
 
-- **Regular Discussion**: Type messages normally to engage all agents
-- **Direct Messaging**: Use `@AgentName:` at the beginning of a line to address specific agents
-- **Structured Discussions**: Type `/discuss <topic>` to initiate a focused multi-round discussion
+## Interactive demo UI
 
-### Example Interaction
+The local UI is a dependency-light Python server plus static HTML/CSS/JavaScript. It shows:
 
-```
-=== Welcome to the AI Laboratory, Erin! ===
+- LIVE and REPLAY execution modes;
+- the six visible pipeline stages, including the deterministic PDF Loader;
+- activity events for each paper-reader call;
+- aggregated latency and retry information;
+- evidence, hypotheses, critical review, final report, and full trace tabs;
+- structured objects rendered as readable JSON rather than `[object Object]`;
+- failures and incomplete runs surfaced in the interface.
 
-Your AI research team:
-  Lea (Biologist): Expert in molecular biology, genetics, and biochemical pathways.
-  Emmy (Mathematician): Specialist in statistical analysis and complex data modeling.
-  Marie (Physicist): Expert in quantum mechanics and simulation.
-  Ada (Computer Scientist): Specialist in machine learning and algorithms.
-  Cassandra (PI): As the lab director, guides discussions and integrates perspectives.
+The UI does not display private chain-of-thought. Its timing is provider round-trip latency and its structured result panels show only the output that enters the shared state.
 
-=== Instructions ===
-• Type your message and press Enter to start the discussion
-• To address specific agents directly, use '@AgentName:' at the start of a line
-• Type '/discuss <topic>' to start a focused multi-round agent discussion
-• Type '/search <query> [--type arxiv|biorxiv] [--results <number>] [--months <number>]' to search for information
-  - For bioRxiv searches, use '--months' to specify how many months back to search (default: 12)
-• Type '/read_folder <folder_path>' to have agents read and discuss papers in a local folder
-• Type '/cost' to see estimated API costs of the current session
-• Type 'exit' to end the session
+## Repository layout
 
-=== Beginning of Discussion ===
-
-Erin:
-  /search protein language models --type biorxiv --results 3
-
-🔍 Searching biorxiv for: protein language models
-
-✅ Search Results (3 found)
-
-1. Pre-trained protein language model for codon optimization
-   https://www.biorxiv.org/content/10.1101/2024.12.12.628267v2
-   Published: 2024-12-12
-
-2. Protein Language Model Identifies Disordered, Conserved Motifs Driving Phase Separation
-   https://www.biorxiv.org/content/10.1101/2024.12.12.628175v1
-   Published: 2024-12-12
-
-3. ProDualNet: Dual-Target Protein Sequence Design Method Based on Protein Language Model and Structure Model
-   https://www.biorxiv.org/content/10.1101/2025.02.28.640919v1
-   Published: 2025-02-28
-
-Type 'continue' to have agents download, read the full text, and discuss these papers in depth.
-
-Erin:
-  continue
-
-🧠 Starting in-depth discussion of search results...
-
-🔍 Agent roles assigned:
-   Reader agents: Emmy, Lea
-   Questioner agents: Marie, Ada, Cassandra
-
-📚 2 agents are reviewing 3 papers while 3 agents will ask questions...
-
-┌─── Emmy ────────────────────────────────────────────────────────────────────────┐
-│ Alright, so I've just finished reading through a couple of really interesting    │
-│ papers that I think you all might want to hear about.                            │
-│ The first one is "ProDualNet: Dual-Target Protein Sequence Design Method Based   │
-│ on Protein Language Model and Structure Model" by Liu Cheng and colleagues. It's │
-│ a fresh preprint from late February this year.                                   │
-│ The second paper is "Protein Language Model Identifies Disordered, Conserved     │
-│ Motifs Driving Phase Separation" by Yumeng Zhang and team, which came out in     │
-│ December.                                                                        │
-│ Let's start with the ProDualNet paper. What caught my eye here is how they're    │
-│ combining protein language models with structure models for protein design.      │
-│ They've developed this method that can generate sequences that satisfy both      │
-│ sequence-based and structure-based constraints simultaneously. It's pretty       │
-│ clever - they're using a transformer-based language model for the sequence part  │
-│ and AlphaFold2 for the structure predictions.                                    │
-└──────────────────────────────────────────────────────────────────────────────────┘
-
-┌─── Lea ─────────────────────────────────────────────────────────────────────────┐
-│ Alright, so I've just finished reading this paper titled "Pre-trained protein    │
-│ language model for codon optimization" by Pathak and Lin. It's a pretty          │
-│ interesting piece that dives into using language models for codon optimization   │
-│ in protein synthesis.                                                            │
-│ The main thing that caught my attention is how they're applying techniques from  │
-│ natural language processing to biological sequences. They've developed this      │
-│ model called PALM-CO that's pre-trained on a massive dataset of protein          │
-│ sequences and then fine-tuned for codon optimization tasks.                      │
-│ What's cool is that they're not just looking at individual codons in isolation,  │
-│ but considering the broader sequence context. Their model takes into account     │
-│ things like codon pair bias and GC content, which can have a big impact on       │
-│ protein expression levels.                                                       │
-└──────────────────────────────────────────────────────────────────────────────────┘
-
-┌─── Marie ───────────────────────────────────────────────────────────────────────┐
-│ @Emmy: I'm intrigued by the ProDualNet paper's approach to balancing sequence    │
-│ and structure constraints. Have they discussed how sensitive their results are   │
-│ to the weighting between these two objectives? I'm wondering if there's a risk   │
-│ of overfitting to one aspect at the expense of the other, especially given the   │
-│ computational complexity of structural predictions.                              │
-└────────────────────────────────────────────────────────────────[ To: Emmy ]─┘
-
-┌─── Emmy ────────────────────────────────────────────────────────────────────────┐
-│ @Marie: Great question about the ProDualNet paper! They actually do address some │
-│ of your concerns, though not exhaustively. The authors used a weighted sum of    │
-│ sequence and structure losses, with weights of 1 and 0.5 respectively. They      │
-│ found this balance worked well, but you're right to wonder about sensitivity -   │
-│ they don't report extensive experiments varying these weights.                   │
-│ On overfitting, they employed early stopping based on validation loss to         │
-│ mitigate this risk. However, they don't deeply explore potential tradeoffs       │
-│ between sequence and structure optimization. It's a valid concern that           │
-│ optimizing too heavily for one aspect could come at the expense of the other.    │
-└─────────────────────────────────────────────────────────────────[ To: Marie ]─┘
-
-┌─── Cassandra ───────────────────────────────────────────────────────────────────┐
-│ Thanks everyone for the great discussion on these fascinating papers. I think    │
-│ we've covered a lot of ground here.                                              │
-│ To recap, we looked at "ProDualNet: Dual-Target Protein Sequence Design Method   │
-│ Based on Protein Language Model and Structure Model", "Protein Language Model    │
-│ Identifies Disordered, Conserved Motifs Driving Phase Separation", and           │
-│ "Pre-trained protein language model for codon optimization".                     │
-│ A few key insights emerged:                                                      │
-│ 1. The ProDualNet paper's approach of using weighted losses to balance sequence  │
-│ and structure constraints is intriguing, but as @Emmy pointed out, we should be  │
-│ cautious about how robust this 1:0.5 weighting is across diverse protein         │
-│ families.                                                                        │
-│ 2. The PALM-CO model for codon optimization considers broader sequence context,  │
-│ which @Lea highlighted could have interesting applications in protein            │
-│ engineering. However, its applicability to non-natural amino acids remains an    │
-│ open question.                                                                   │
-└──────────────────────────────────────────────────────────────────────────────────┘
+```text
+.
+├── data/demo_papers/              # Five local PDFs used by the demo
+├── schemas/
+│   └── research_state.schema.json # JSON Schema for the shared state
+├── src/
+│   ├── workflow.py                # Main five-agent orchestration
+│   ├── state.py                   # ResearchState and citation validation
+│   ├── runtime.py                 # Cache, replay, trace, and report persistence
+│   ├── llm_client.py              # Anthropic and OpenAI-compatible transport
+│   ├── research_main.py           # CLI for the paper-driven workflow
+│   ├── ui_server.py                # Local demo server and progress API
+│   ├── config/                    # YAML and .env configuration resolution
+│   └── tools/pdf_loader.py        # Local PDF extraction and page chunks
+├── ui/
+│   ├── index.html                 # Demo UI layout
+│   ├── styles.css                 # Visual design
+│   └── app.js                     # Polling, rendering, and interactions
+├── config.yaml.example            # Non-secret configuration template
+├── .env                           # Local secrets; ignored by Git
+├── requirements.txt
+├── cache/                         # Generated live-call cache; ignored by Git
+└── runs/                          # Generated reports and traces; ignored by Git
 ```
 
-## Architecture and Design
+## Quick start
 
-The codebase follows a modular structure:
+### 1. Create an environment
 
-- `src/`: Main source code
-  - `agents/`: Contains agent-related code
-    - `base.py`: Base agent implementation with conversation capabilities
-    - `lab.py`: Laboratory implementation managing multi-agent interactions
-  - `config/`: Configuration handling
-  - `utils/`: Utility functions including paper retrieval
-  - `main.py`: Application entry point
+PowerShell:
 
-This project was developed with the assistance of Claude Code.
-
-## Comparison with AgentLaboratory
-
-This project is inspired by [AgentLaboratory](https://github.com/SamuelSchmidgall/AgentLaboratory) but takes a different approach:
-
-- **Role Structure**: Uses peer-based specialists rather than hierarchical roles
-- **Conversation Flow**: Focuses on natural multi-agent discussions rather than sequential research phases
-- **Communication Style**: Implements @mention system for direct inter-agent communication
-- **Paper Search**: Retrieves and analyzes papers from arXiv and bioRxiv
-
-See `docs/AGENT_COLLABORATION.md` for a detailed comparison.
-
-## Requirements
-
-- Python 3.10+ (this workspace uses Python 3.13)
-- Anthropic, Groq, Google Gemini, Zhipu BigModel and DashScope API credentials for the five-model configuration
-- Dependencies:
-  - anthropic>=1.0.0,<2.0.0
-  - PyYAML>=6.0
-  - PyPDF2>=3.0.0 (for PDF document processing)
-  - requests>=2.25.1
-  - feedparser>=6.0.0 (for research APIs)
-
-## Advanced Usage
-
-
-### Structured Discussions
-
-Use the `/discuss` command to initiate a structured, multi-round discussion:
-
-```
-/discuss How might we develop more energy-efficient quantum computing architectures?
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-This starts a focused discussion where agents:
-1. Provide initial perspectives
-2. Build on each other's ideas
-3. Work toward concrete outcomes
+On macOS/Linux, use `.venv/bin/python` and `.venv/bin/activate` instead.
 
-### Research Integration
+### 2. Create local configuration
 
-Ask questions that require research:
-
-```
-What are the latest developments in large language model few-shot learning?
+```powershell
+Copy-Item config.yaml.example config.yaml
 ```
 
-Agents will integrate information from arXiv and bioRxiv when appropriate.
+`config.yaml` is intentionally ignored by Git. Put live credentials in the root `.env` file:
 
-### Paper Search and Reading
-
-The system provides two ways to find and discuss scientific papers:
-
-#### 1. Online Search via `/search`
-
-```
-/search protein folding --type arxiv --results 5
-/search cancer immunotherapy --type biorxiv --months 6 --results 3
+```dotenv
+ANTHROPIC_API_KEY=your_anthropic_key
+QWEN_API_KEY=your_dashscope_key
+GROQ_API_KEY=your_groq_key
 ```
 
-**Important Note on bioRxiv Search:**
-The bioRxiv API does not provide full search functionality. Instead, it can only:
-- List papers published within a specified time range (using the `--months` parameter)
-- Return the most recent papers that include certain terms
-- Results are deduplicated to show only the latest version of each paper
+`DASHSCOPE_API_KEY` can be used instead of `QWEN_API_KEY`. Never commit `.env`, real keys, or a populated `config.yaml`.
 
-This means bioRxiv searches may not be as precise as arXiv searches. For specific papers or detailed searches, using the `/read_folder` command with local files may be more effective.
+See [MULTI_MODEL_SETUP.md](MULTI_MODEL_SETUP.md) for the current provider routing and credential precedence.
 
-#### 2. Local Paper Reading via `/read_folder`
+### 3. Start the interactive UI
 
-For cases where you have specific papers you want to discuss or when online search doesn't yield the needed results, you can use local PDF files:
-
-```
-/read_folder ~/papers/quantum_computing
+```powershell
+.\.venv\Scripts\python.exe -m src.ui_server --host 127.0.0.1 --port 8765
 ```
 
-This command will:
-1. Scan the specified folder for PDF files
-2. Display a list of found papers (based on filenames)
-3. After typing 'continue', agents will read and discuss these papers
+Open <http://127.0.0.1:8765>. After changing Python files, stop and restart this server because it does not hot-reload imported modules.
 
-The `/read_folder` command provides a reliable alternative to online searches, especially when:
-- You have specific papers you want the agents to analyze
-- Online searches don't return the exact papers needed
-- You need to discuss papers that might not be available through arXiv or bioRxiv
+## CLI workflow
 
-Both workflows follow the same pattern - after search or folder selection, type 'continue' to have agents read and discuss the papers.
+The UI is the intended interview demo, but the same workflow can run from the command line:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.research_main `
+  --mode live `
+  --question "What evidence supports partial representational alignment between human EEG and LLM reasoning states?"
+```
+
+After a successful live run, replay the same question and local corpus without provider calls:
+
+```powershell
+.\.venv\Scripts\python.exe -m src.research_main --mode replay
+```
+
+Replay is content-addressed. The question, paper inputs, model assignment, and state passed to each stage must match the cached live run. Run LIVE once after changing prompts, models, schema, or workflow logic.
+
+Useful options include:
+
+```text
+--papers-dir data/demo_papers
+--cache-dir cache
+--runs-dir runs
+--trace-path runs/trace.jsonl
+--timeout 45
+--max-retries 2
+--no-persist
+```
+
+## Cache, retry, and trace behavior
+
+Transient provider failures such as rate limits, server errors, and timeouts are retried up to two times. Common model-format failures, including malformed JSON, also receive bounded retry with a stricter JSON-only instruction. There is no unbounded agent-to-agent chat loop.
+
+Each live model call produces a trace record like:
+
+```json
+{
+  "agent": "critic",
+  "model": "claude-sonnet-4-6",
+  "latency_ms": 18300,
+  "retry_count": 0,
+  "status": "success",
+  "mode": "live",
+  "cache_hit": false
+}
+```
+
+The default persisted artifacts are:
+
+```text
+runs/research_state.json  # Complete validated shared state
+runs/final_report.md      # Human-readable report
+runs/trace.jsonl          # One record per model call
+cache/*.json              # Structured provider results for replay
+```
+
+The UI stores each run under `runs/ui/<run_id>/` so that a demo run can be inspected independently.
+
+## Current limitations
+
+- PDF processing is text extraction with PyPDF2; figures, tables, scanned pages, and OCR are not interpreted by the current Reader.
+- The primary workflow reads only the PDFs already present in `data/demo_papers`; it does not ask an LLM to discover paper sources.
+- Evidence quality still depends on the model's ability to select faithful quotations from extracted text.
+- Provider availability, rate limits, quotas, and latency are external to this repository.
