@@ -78,7 +78,7 @@ An evidence record must contain:
 
 The same contract is represented in [schemas/research_state.schema.json](schemas/research_state.schema.json) and enforced again in [src/state.py](src/state.py). Claims without a known paper and page cannot pass the final report validation. The current Reader stage is called separately for each local paper and requires evidence coverage from at least two papers before hypotheses are generated.
 
-## Interactive demo UI
+## Interactive UI
 
 The local UI is a dependency-light Python server plus static HTML/CSS/JavaScript. It shows:
 
@@ -87,7 +87,7 @@ The local UI is a dependency-light Python server plus static HTML/CSS/JavaScript
 - activity events for each paper-reader call;
 - aggregated latency and retry information;
 - evidence, hypotheses, critical review, final report, and full trace tabs;
-- structured objects rendered as readable JSON rather than `[object Object]`;
+- structured objects rendered as readable JSON;
 - failures and incomplete runs surfaced in the interface.
 
 The UI does not display private chain-of-thought. Its timing is provider round-trip latency and its structured result panels show only the output that enters the shared state.
