@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-CACHE_FORMAT_VERSION = 1
+CACHE_FORMAT_VERSION = 2
 
 
 class CacheMissError(FileNotFoundError):

@@ -8,8 +8,10 @@ only see JSON-shaped state and paper chunks.
 from __future__ import annotations
 
 import asyncio
+import ast
 import inspect
 import json
+import re
 import time
 from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable, Mapping
@@ -57,36 +59,110 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
-def _parse_json_object(text: str, *, agent_name: str) -> dict[str, Any]:
-    """Parse a JSON object, tolerating a markdown code fence around it."""
-
-    if not isinstance(text, str) or not text.strip():
-        raise WorkflowError(f"{agent_name} returned empty output")
+def _strip_json_fence(text: str) -> str:
     candidate = text.strip()
     if candidate.startswith("```"):
         lines = candidate.splitlines()
-        if lines and lines[0].startswith("```"):
+        if lines and lines[0].lstrip().startswith("```"):
             lines = lines[1:]
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         candidate = "\n".join(lines).strip()
-    try:
-        value = json.loads(candidate)
-    except json.JSONDecodeError:
-        # Models occasionally add one sentence before the JSON.  Decode the
-        # first complete object without accepting arbitrary trailing prose.
-        decoder = json.JSONDecoder()
-        start = candidate.find("{")
-        if start < 0:
-            raise WorkflowError(f"{agent_name} did not return a JSON object") from None
+    return candidate
+
+
+def _balanced_json_object(text: str) -> str | None:
+    """Return the first balanced object, ignoring braces inside strings."""
+
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _escape_raw_string_controls(text: str) -> str:
+    """Escape literal control characters that appear inside JSON strings."""
+
+    output: list[str] = []
+    in_string = False
+    escaped = False
+    for char in text:
+        if in_string:
+            if escaped:
+                output.append(char)
+                escaped = False
+            elif char == "\\":
+                output.append(char)
+                escaped = True
+            elif char == '"':
+                output.append(char)
+                in_string = False
+            elif char == "\n":
+                output.append("\\n")
+            elif char == "\r":
+                output.append("\\r")
+            elif char == "\t":
+                output.append("\\t")
+            elif ord(char) < 0x20:
+                output.append(f"\\u{ord(char):04x}")
+            else:
+                output.append(char)
+        else:
+            output.append(char)
+            if char == '"':
+                in_string = True
+    return "".join(output)
+
+
+def _parse_json_object(text: str, *, agent_name: str) -> dict[str, Any]:
+    """Parse a model object while tolerating common JSON presentation errors."""
+
+    if not isinstance(text, str) or not text.strip():
+        raise WorkflowError(f"{agent_name} returned empty output")
+    candidate = _strip_json_fence(text)
+    object_text = _balanced_json_object(candidate)
+    if object_text is None:
+        raise WorkflowError(f"{agent_name} did not return a JSON object") from None
+
+    attempts = [object_text]
+    # Repair only presentation-level issues; source fields are still validated
+    # later by ResearchState, so this cannot bypass the citation gate.
+    attempts.append(re.sub(r",\s*([}\]])", r"\1", _escape_raw_string_controls(object_text)))
+    for attempt in attempts:
         try:
-            value, end = decoder.raw_decode(candidate[start:])
-        except json.JSONDecodeError as exc:
-            raise WorkflowError(f"{agent_name} returned malformed JSON") from exc
-        if candidate[start + end :].strip():
-            # A valid object plus prose is still usable, but the prose is not
-            # allowed to become part of shared state.
-            pass
+            value = json.loads(attempt)
+            break
+        except json.JSONDecodeError:
+            continue
+    else:
+        # A few OpenAI-compatible endpoints occasionally emit a Python-style
+        # dict despite the JSON instruction. Literal evaluation is safe here
+        # and is followed by the same structured state validation.
+        try:
+            value = ast.literal_eval(attempts[-1])
+        except (SyntaxError, ValueError, TypeError):
+            raise WorkflowError(f"{agent_name} returned malformed JSON") from None
     if not isinstance(value, dict):
         raise WorkflowError(f"{agent_name} must return a JSON object")
     return value
@@ -193,6 +269,18 @@ def _normalise_final_report(
             item.setdefault("page", source["page"])
             item.setdefault("quote", source["quote"])
         enriched.append(item)
+    # Preserve the complete evidence gate in the report. The Director may
+    # discuss a subset in its prose, but no validated source should disappear
+    # from the final citation section.
+    cited_ids = {item.get("claim_id") for item in enriched}
+    for source in state.evidence:
+        if source["claim_id"] not in cited_ids:
+            enriched.append({
+                "claim_id": source["claim_id"],
+                "paper_id": source["paper_id"],
+                "page": source["page"],
+                "quote": source["quote"],
+            })
     report["evidence"] = enriched
     return report
 
@@ -201,6 +289,9 @@ def _apply_agent_output(
     agent_name: str,
     state: ResearchState,
     value: Any,
+    *,
+    reader_paper_id: str | None = None,
+    merge_hypotheses: bool = False,
 ) -> ResearchState:
     result = _structured_result(value, agent_name=agent_name)
     if isinstance(result, ResearchState):
@@ -213,9 +304,48 @@ def _apply_agent_output(
             raise WorkflowError("planner must return a plan object")
         state.plan = dict(plan)
     elif agent_name == "reader":
-        state.evidence = _normalise_evidence(result)
+        incoming = _normalise_evidence(result)
+        if reader_paper_id is not None:
+            wrong_sources = {
+                item.get("paper_id") for item in incoming
+                if item.get("paper_id") != reader_paper_id
+            }
+            if wrong_sources:
+                raise WorkflowError(
+                    f"reader returned evidence for the wrong paper(s): {sorted(wrong_sources)}; "
+                    f"expected only {reader_paper_id}"
+                )
+        existing_ids = {item["claim_id"] for item in state.evidence}
+        for item in incoming:
+            if item["claim_id"] in existing_ids:
+                base_id = f"{item.get('paper_id', 'paper')}_{item['claim_id']}"
+                item["claim_id"] = base_id
+                suffix = 2
+                while item["claim_id"] in existing_ids:
+                    item["claim_id"] = f"{base_id}_{suffix}"
+                    suffix += 1
+            existing_ids.add(item["claim_id"])
+        state.evidence.extend(incoming)
     elif agent_name == "hypothesis":
-        state.hypotheses = _normalise_hypotheses(result)
+        incoming = _normalise_hypotheses(result)
+        if merge_hypotheses:
+            existing_ids = {
+                item.get("hypothesis_id")
+                for item in state.hypotheses
+                if isinstance(item, Mapping)
+            }
+            for item in incoming:
+                base_id = str(item["hypothesis_id"])
+                if item["hypothesis_id"] in existing_ids:
+                    suffix = 2
+                    item["hypothesis_id"] = f"{base_id}_R"
+                    while item["hypothesis_id"] in existing_ids:
+                        item["hypothesis_id"] = f"{base_id}_R{suffix}"
+                        suffix += 1
+                existing_ids.add(item["hypothesis_id"])
+            state.hypotheses.extend(incoming)
+        else:
+            state.hypotheses = incoming
     elif agent_name == "critic":
         critique = result.get("critique", result)
         if not isinstance(critique, Mapping):
@@ -251,9 +381,16 @@ def _prompt_for(agent_name: str, state: ResearchState) -> tuple[str, dict[str, A
     if agent_name == "reader":
         return (
             common
-            + " Extract only directly supported evidence. Output {evidence: [...]} where "
+            + " Extract only directly supported evidence from the supplied paper. "
+            "This call is scoped to one paper; produce 1-3 evidence items for it, "
+            "including relevant methodological or limiting evidence when it does not "
+            "directly test EEG-LLM alignment. Do not emit evidence from another paper. "
+            "Keep each claim and quotation concise (quotation under 40 words) and "
+            "keep the complete response under 1800 tokens. "
+            "Output {evidence: [...]} where "
             "each item has claim_id, claim, quote, paper_id, page, confidence. "
-            "page is the one-based page supplied with the chunk and confidence is 0..1.",
+            "page is the one-based page supplied with the chunk and confidence is 0..1. "
+            "Use the supplied paper_id exactly.",
             {
                 "question": state.question,
                 "plan": state.plan,
@@ -261,9 +398,14 @@ def _prompt_for(agent_name: str, state: ResearchState) -> tuple[str, dict[str, A
             },
         )
     if agent_name == "hypothesis":
+        repair_instruction = state.plan.get("_hypothesis_repair_instruction")
         return (
             common
-            + " Generate testable hypotheses only from the evidence. Output "
+            + " Generate 2-4 distinct, testable hypotheses only from the evidence. "
+            "Each hypothesis must cite one or more evidence_ids, and the set should "
+            "compare evidence from different papers when available. "
+            + (f"{repair_instruction} " if repair_instruction else "")
+            + "Output "
             "{hypotheses: [{hypothesis_id, hypothesis, mechanism, predictions, evidence_ids}]}.",
             {
                 "question": state.question,
@@ -274,7 +416,8 @@ def _prompt_for(agent_name: str, state: ResearchState) -> tuple[str, dict[str, A
     if agent_name == "critic":
         return (
             common
-            + " Audit every hypothesis against the evidence. Output "
+            + " Audit every hypothesis against the evidence. Findings, unsupported_claims, "
+            "and required_repairs may be concise strings or structured objects with IDs. Output "
             "{status: 'pass'|'revise'|'reject', findings: [...], unsupported_claims: [...], "
             "required_repairs: [...]}. Identify evidence_ids when possible.",
             {
@@ -288,7 +431,11 @@ def _prompt_for(agent_name: str, state: ResearchState) -> tuple[str, dict[str, A
             common
             + " Write the final scientific report as an object with title, summary, "
             "evidence (citation objects with claim_id, paper_id, page), limitations, "
-            "and next_experiment. Every report claim must cite known evidence.",
+            "and next_experiment. Every report claim must cite known evidence. "
+            "Compare evidence across all represented papers and include at least one "
+            "citation from each paper represented in the evidence input. Keep the "
+            "report concise: summary under 250 words, limitations under 4 bullets, "
+            "next_experiment under 150 words, and do not reproduce long quotations.",
             {
                 "question": state.question,
                 "plan": state.plan,
@@ -354,7 +501,13 @@ class _LiveAgentRunner:
         self._clients[agent_name] = (client, settings)
         return client, settings
 
-    async def call(self, agent_name: str, state: ResearchState) -> dict[str, Any]:
+    async def call(
+        self,
+        agent_name: str,
+        state: ResearchState,
+        *,
+        format_retry: bool = False,
+    ) -> dict[str, Any]:
         if agent_name not in ROLE_PROVIDERS:
             raise WorkflowError(f"unknown agent: {agent_name}")
         client, settings = self._client_for(agent_name)
@@ -362,6 +515,12 @@ class _LiveAgentRunner:
         configured_prompt = settings.get("system_prompt", "")
         if configured_prompt:
             system += f"\nAdditional role guidance:\n{configured_prompt}"
+        if format_retry:
+            system += (
+                "\nYour previous response could not be parsed. Return exactly one "
+                "valid JSON object: no markdown fence, no preamble, no trailing "
+                "commentary, and escape every quotation mark inside string values."
+            )
         response = await asyncio.to_thread(
             client.create,
             model=settings["model"],
@@ -457,7 +616,11 @@ async def call_agent(
         if base_call is not None:
             result = base_call(agent_name, state)
             return await result if inspect.isawaitable(result) else result
-        return await active_runner.call(agent_name, state)
+        return await active_runner.call(
+            agent_name,
+            state,
+            format_retry=retry_count > 0,
+        )
 
     retry_count = 0
     while True:
@@ -515,6 +678,17 @@ def _is_retryable(error: BaseException) -> bool:
     if isinstance(status_code, int) and (status_code in {408, 429} or status_code >= 500):
         return True
     error_name = error.__class__.__name__.lower()
+    if isinstance(error, WorkflowError):
+        message = str(error).lower()
+        if any(
+            marker in message
+            for marker in (
+                "returned malformed json",
+                "did not return a json object",
+                "returned empty output",
+            )
+        ):
+            return True
     return (
         isinstance(error, (TimeoutError, asyncio.TimeoutError))
         or "timeout" in error_name
@@ -686,21 +860,51 @@ class ResearchWorkflow:
         )
 
         # 3. Paper Reader
-        self._emit("reader", "running", state, label="Extracting page-level evidence")
-        reader_state = ResearchState.from_dict(state.to_dict(validate=False), validate=False)
-        reader_state.papers = _bounded_reader_chunks(state.papers, self.max_reader_chars)
-        state = _apply_agent_output(
-            "reader",
-            state,
-            await self._invoke(
-                "reader", reader_state, base_call=base_call, runner=runner,
-                cache=cache, trace_logger=trace_logger,
-            ),
-        )
-        self._emit(
-            "reader", "completed", state, label="Evidence extracted",
-            result={"evidence": state.evidence},
-        )
+        paper_groups: dict[str, list[dict[str, Any]]] = {}
+        for paper in state.papers:
+            paper_groups.setdefault(str(paper["paper_id"]), []).append(paper)
+        for paper_id in sorted(paper_groups):
+            self._emit(
+                "reader", "running", state,
+                label=f"Extracting evidence from {paper_id}",
+                paper_id=paper_id,
+            )
+            reader_state = ResearchState.from_dict(
+                state.to_dict(validate=False), validate=False
+            )
+            reader_state.papers = _bounded_reader_chunks(
+                paper_groups[paper_id], self.max_reader_chars
+            )
+            state = _apply_agent_output(
+                "reader",
+                state,
+                await self._invoke(
+                    "reader", reader_state, base_call=base_call, runner=runner,
+                    cache=cache, trace_logger=trace_logger,
+                ),
+                reader_paper_id=paper_id,
+            )
+            paper_evidence = [
+                evidence for evidence in state.evidence
+                if evidence.get("paper_id") == paper_id
+            ]
+            self._emit(
+                "reader", "completed", state,
+                label=f"Evidence extracted from {paper_id}",
+                paper_id=paper_id,
+                result={"paper_id": paper_id, "evidence": paper_evidence},
+            )
+
+        covered_papers = {
+            evidence["paper_id"]
+            for evidence in state.evidence
+            if isinstance(evidence, Mapping) and evidence.get("paper_id")
+        }
+        if len(covered_papers) < 2:
+            raise WorkflowError(
+                "Evidence gate blocked the run: Paper Reader produced evidence "
+                f"from only {len(covered_papers)} local paper(s); at least 2 are required."
+            )
 
         # 4. Hypothesis Generator
         self._emit("hypothesis", "running", state, label="Generating testable hypotheses")
@@ -716,6 +920,33 @@ class ResearchWorkflow:
             "hypothesis", "completed", state, label="Hypotheses generated",
             result={"hypotheses": state.hypotheses},
         )
+
+        hypothesis_repair_used = False
+        if self.max_hypothesis_repairs == 1 and len(state.hypotheses) < 2:
+            hypothesis_repair_used = True
+            state.plan["_hypothesis_repair_instruction"] = (
+                "This is the one allowed repair. Add at least one genuinely new "
+                "hypothesis using evidence from a different paper; do not repeat H1."
+            )
+            self._emit(
+                "hypothesis", "repairing", state,
+                label="Broadening hypothesis set to cover the evidence",
+            )
+            state = _apply_agent_output(
+                "hypothesis",
+                state,
+                await self._invoke(
+                    "hypothesis", state, base_call=base_call, runner=runner,
+                    cache=cache, trace_logger=trace_logger,
+                ),
+                merge_hypotheses=True,
+            )
+            state.plan.pop("_hypothesis_repair_instruction", None)
+            self._emit(
+                "hypothesis", "repaired", state,
+                label="Hypothesis set broadened",
+                result={"hypotheses": state.hypotheses},
+            )
 
         # 5. Critical Reviewer
         self._emit("critic", "running", state, label="Auditing claims and assumptions")
@@ -736,6 +967,7 @@ class ResearchWorkflow:
         # loop: the director is always the final model stage.
         if (
             self.max_hypothesis_repairs == 1
+            and not hypothesis_repair_used
             and str(state.critique.get("status", "")).lower() in {"revise", "modify", "repair"}
         ):
             state.critique["repair_attempted"] = True

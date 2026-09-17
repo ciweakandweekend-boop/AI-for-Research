@@ -157,7 +157,10 @@ def _start_run(payload: dict[str, Any]) -> DemoRun:
             with RUNS_LOCK:
                 job.status = "error"
                 job.phase_status = "error"
-                job.error = f"{type(exc).__name__}: {exc}"
+                if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
+                    job.error = f"{job.phase.title()} timed out after {timeout:g} seconds"
+                else:
+                    job.error = f"{type(exc).__name__}: {exc}"
                 job.finished_at = time.time()
 
     threading.Thread(target=worker, name=f"research-{run_id}", daemon=True).start()

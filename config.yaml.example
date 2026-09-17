@@ -69,7 +69,7 @@ agents:
   - name: Scientific Director
     provider: anthropic
     model: "claude-sonnet-4-6"
-    max_tokens: 12288
+    max_tokens: 4096
     timeout: 45
     specialty: Scientific synthesis
     description: Produces the final report with evidence, limitations, and next experiment.

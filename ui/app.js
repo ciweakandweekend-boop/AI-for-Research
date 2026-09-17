@@ -49,9 +49,20 @@ function latestTrace(data, id) {
   return [...(data?.trace || [])].reverse().find((entry) => entry.agent === id);
 }
 
+function stageTrace(data, id) {
+  const entries = (data?.trace || []).filter((entry) => entry.agent === id);
+  if (!entries.length) return null;
+  return {
+    ...entries[entries.length - 1],
+    latency_ms: entries.reduce((total, entry) => total + Number(entry.latency_ms || 0), 0),
+    retry_count: entries.reduce((total, entry) => total + Number(entry.retry_count || 0), 0),
+    calls: entries.length,
+  };
+}
+
 function stageStatus(data, id) {
   const event = latestEvent(data, id);
-  if (event) return event.status;
+  if (event) return event.status === "repaired" ? "completed" : event.status;
   if (data?.status === "error" && data.phase === id) return "error";
   return "queued";
 }
@@ -96,7 +107,7 @@ function resultFor(id, data) {
 function renderPipeline(data) {
   $("#pipeline").innerHTML = AGENTS.map((agent) => {
     const status = stageStatus(data, agent.id);
-    const trace = latestTrace(data, agent.id);
+    const trace = stageTrace(data, agent.id);
     const event = latestEvent(data, agent.id);
     const retry = trace?.retry_count ? `<span class="retry-pill">↻ ${trace.retry_count}</span>` : "";
     const timing = trace ? formatMs(trace.latency_ms) : (agent.id === "loader" ? "local" : "—");
@@ -184,6 +195,43 @@ function reportHtml(state) {
     <div class="report-block"><h3>Next experiment</h3><p>${list(report.next_experiment || "")}</p></div>`;
 }
 
+function readableStructured(value) {
+  if (value && typeof value === "object") return JSON.stringify(value, null, 2);
+  return String(value ?? "");
+}
+
+function structuredListHtml(value, emptyLabel) {
+  if (!Array.isArray(value) || !value.length) return escapeHtml(emptyLabel);
+  return value.map((item) => `<div class="structured-line">${escapeHtml(readableStructured(item))}</div>`).join("");
+}
+
+// Render structured model fields explicitly so the browser never falls back
+// to JavaScript's unhelpful "[object Object]" representation.
+function critiqueHtml(state) {
+  const critique = state?.critique || {};
+  if (!Object.keys(critique).length) return `<div class="empty-state"><strong>Review pending</strong><span>The Critical Reviewer will challenge unsupported claims.</span></div>`;
+  const status = String(critique.status || "reviewed").toLowerCase();
+  return `<div class="critique-block"><span class="status-ribbon ${escapeHtml(status)}">${escapeHtml(status.toUpperCase())}</span>
+    <h3 style="margin-top:17px">Findings</h3><div>${structuredListHtml(critique.findings, "No findings returned.")}</div>
+    <h3 style="margin-top:17px">Unsupported claims</h3><div>${structuredListHtml(critique.unsupported_claims, "None flagged.")}</div>
+    <h3 style="margin-top:17px">Required repairs</h3><div>${structuredListHtml(critique.required_repairs, "No repair requested.")}</div></div>`;
+}
+
+function reportHtml(state) {
+  const report = state?.final_report;
+  if (!report || !Object.keys(report).length) return `<div class="empty-state"><strong>Final report pending</strong><span>The Scientific Director will synthesize the checked state.</span></div>`;
+  const valueHtml = (value) => value && typeof value === "object"
+    ? `<pre class="json-result">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`
+    : escapeHtml(value ?? "");
+  const list = (value) => Array.isArray(value)
+    ? value.map((item) => `<div class="structured-line">${valueHtml(item)}</div>`).join("")
+    : valueHtml(value);
+  return `<div class="report-block"><h1 class="report-title">${escapeHtml(report.title || "Research report")}</h1><h3>Answer</h3><p>${escapeHtml(report.summary || "")}</p></div>
+    <div class="report-block"><h3>Evidence used</h3><p>${(report.evidence || []).map((ref) => `&bull; ${escapeHtml(ref.claim_id)} &middot; ${escapeHtml(ref.paper_id)}, p. ${escapeHtml(ref.page)}`).join("<br />") || "None"}</p></div>
+    <div class="report-block"><h3>Limitations</h3><div>${list(report.limitations || [])}</div></div>
+    <div class="report-block"><h3>Next experiment</h3><div>${list(report.next_experiment || "")}</div></div>`;
+}
+
 function fullTraceHtml(data) {
   const trace = data?.trace || [];
   if (!trace.length) return `<div class="empty-state"><span class="empty-icon">⌁</span><strong>No trace records</strong><span>Every model call will appear here.</span></div>`;
@@ -194,7 +242,7 @@ function showStageDetail(id, data) {
   selectedStage = id;
   const agent = AGENTS.find((item) => item.id === id) || { name: id, model: "" };
   const event = latestEvent(data, id);
-  const trace = latestTrace(data, id);
+  const trace = stageTrace(data, id);
   const result = event?.result || {};
   $("#tab-content").innerHTML = `<div class="report-block"><div class="item-meta"><strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.model)}</span></div><h3 style="margin-top:17px">What this stage did</h3><p>${escapeHtml(event?.label || "Waiting for this stage")}</p><h3 style="margin-top:17px">Provider round-trip</h3><p>${trace ? `${formatMs(trace.latency_ms)} · ${trace.retry_count || 0} retries · ${trace.cache_hit ? "cache replay" : "provider call"}` : "No completed call yet."}</p><h3 style="margin-top:17px">Structured result</h3><pre class="json-result">${escapeHtml(JSON.stringify(result, null, 2) || "Waiting for result")}</pre></div>`;
   document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("active"));
@@ -215,7 +263,6 @@ function render(data) {
   $("#evidence-count").textContent = summary.evidence;
   $("#hypothesis-count").textContent = summary.hypotheses;
   $("#metric-mode").textContent = data?.mode ? data.mode.toUpperCase() : "STANDBY";
-  $("#metric-id").textContent = data?.run_id ? data.run_id.slice(-7) : "—";
   $("#metric-mode").style.color = data?.mode === "replay" ? "var(--cyan)" : "var(--violet)";
   $("#feed-badge").textContent = data?.status ? data.status.toUpperCase() : "IDLE";
   $("#feed-badge").className = `live-badge ${data?.status === "running" ? "active" : data?.status === "completed" ? "done" : ""}`;
@@ -251,7 +298,7 @@ async function startRun() {
   button.disabled = true;
   button.innerHTML = `<span class="run-button-icon">⋯</span><span>Starting run</span><span class="button-arrow">↗</span>`;
   try {
-    const response = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: $("#question").value, mode: selectedMode, timeout: Number($("#timeout").value), retries: Number($("#retries").value) }) });
+    const response = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: $("#question").value, mode: selectedMode }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to start run");
     currentRunId = result.run_id;
