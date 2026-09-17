@@ -1,0 +1,78 @@
+# Example configuration file for the AI Laboratory
+
+# User settings
+user:
+  name: Your name  # Replace with your name before running
+
+# Anthropic API settings
+anthropic_api_key: "YOUR_ANTHROPIC_API_KEY_HERE"
+model: "claude-sonnet-4-6"  # Legacy default for agents without a model field
+
+# Fill these slots or set the indicated environment variables.
+# Each slot belongs to its named platform. Existing keys should be preserved.
+api_keys:
+  groq: ""       # GROQ_API_KEY, for Lea / openai/gpt-oss-120b
+  qwen: ""       # QWEN_API_KEY, or DASHSCOPE_API_KEY (Beijing)
+  zhipu: ""      # ZHIPU_API_KEY, for Marie / BigModel glm-4.7-flash
+  gemini: ""     # GEMINI_API_KEY, for Emmy / Google Gemini 3.8 Flash
+
+# Agent definitions
+agents:
+  - name: Lea
+    provider: groq
+    model: "openai/gpt-oss-120b"
+    api_key_name: groq
+    max_tokens: 2048
+    extra_body:
+      reasoning_effort: low
+      include_reasoning: false
+    specialty: Biologist
+    description: Expert in molecular biology, genetics, and biochemical pathways who excels at connecting theoretical models with experimental evidence.
+    
+  - name: Emmy
+    provider: gemini
+    model: "gemini-3.8-flash"
+    api_key_name: gemini
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+    max_tokens: 16384
+    extra_body:
+      reasoning_effort: low
+    system_prompt: >-
+      You are a critical scientific reviewer.
+      Check evidence, methodology, citations and overclaiming.
+    specialty: Mathematician
+    description: Specialist in statistical analysis who helps the team separate signal from noise in complex datasets.
+    
+  - name: Marie
+    provider: zhipu
+    model: "glm-4.7-flash"
+    api_key_name: zhipu
+    base_url: "https://open.bigmodel.cn/api/paas/v4/"
+    max_tokens: 16384
+    extra_body:
+      thinking:
+        type: enabled
+      temperature: 0.2
+    system_prompt: >-
+      You are a skeptical scientific reviewer.
+      Identify unsupported claims, methodological weaknesses,
+      confounding variables, and missing evidence.
+    specialty: Physicist
+    description: Expert in quantum mechanics and simulation who brings first principles thinking to every problem.
+    
+  - name: Ada
+    provider: anthropic
+    model: "claude-sonnet-4-6"
+    specialty: Computer Scientist
+    description: Specialist in machine learning and algorithms who translates complex concepts into working code.
+
+  - name: Cassandra
+    provider: dashscope
+    model: "qwen3.8-max"
+    api_key_name: qwen
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    extra_body:
+      enable_thinking: false
+      preserve_thinking: false
+    specialty: PI (Principal Investigator)
+    description: As the lab director, you guide discussions toward productive outcomes while encouraging intellectual exploration.
