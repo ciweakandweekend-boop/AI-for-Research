@@ -32,7 +32,7 @@ AGENT_META = {
     "loader": {"name": "PDF Loader", "model": "Python / PyPDF2", "accent": "cyan"},
     "reader": {"name": "Paper Reader", "model": "Qwen3.8-Max", "accent": "blue"},
     "hypothesis": {"name": "Hypothesis Generator", "model": "GPT-OSS-120B", "accent": "orange"},
-    "critic": {"name": "Critical Reviewer", "model": "GLM-4.7-Flash", "accent": "pink"},
+    "critic": {"name": "Critical Reviewer", "model": "Claude Sonnet 4.6", "accent": "pink"},
     "director": {"name": "Scientific Director", "model": "Claude Sonnet 4.6", "accent": "green"},
 }
 

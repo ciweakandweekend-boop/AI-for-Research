@@ -2,7 +2,7 @@
 # Credentials must stay outside YAML/Git. Set these variables in .env or the
 # shell environment before using --mode live:
 #   ANTHROPIC_API_KEY, QWEN_API_KEY (or DASHSCOPE_API_KEY),
-#   GROQ_API_KEY, ZHIPU_API_KEY
+#   GROQ_API_KEY
 
 user:
   name: Demo Researcher
@@ -13,7 +13,6 @@ model: "claude-sonnet-4-6"
 api_keys:
   groq: ""
   qwen: ""
-  zhipu: ""
 
 agents:
   - name: Planner
@@ -56,16 +55,11 @@ agents:
     description: Converts validated evidence into mechanisms and testable predictions.
 
   - name: Critical Reviewer
-    provider: zhipu
-    model: "glm-4.7-flash"
-    api_key_name: zhipu
-    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    provider: anthropic
+    model: "claude-sonnet-4-6"
+    api_key_name: anthropic
     max_tokens: 8192
     timeout: 45
-    extra_body:
-      thinking:
-        type: enabled
-      temperature: 0.2
     system_prompt: >-
       Identify unsupported claims, methodological weaknesses, confounding
       variables, and missing evidence. Return only the required JSON object.

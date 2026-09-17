@@ -3,7 +3,7 @@ const AGENTS = [
   { id: "loader", name: "PDF Loader", model: "Python / PyPDF2", icon: "▤", accent: "cyan" },
   { id: "reader", name: "Paper Reader", model: "Qwen3.8-Max", icon: "◫", accent: "blue" },
   { id: "hypothesis", name: "Hypothesis Generator", model: "GPT-OSS-120B", icon: "✦", accent: "orange" },
-  { id: "critic", name: "Critical Reviewer", model: "GLM-4.7-Flash", icon: "◇", accent: "pink" },
+  { id: "critic", name: "Critical Reviewer", model: "Claude Sonnet 4.6", icon: "◇", accent: "pink" },
   { id: "director", name: "Scientific Director", model: "Claude Sonnet 4.6", icon: "◈", accent: "green" },
 ];
 

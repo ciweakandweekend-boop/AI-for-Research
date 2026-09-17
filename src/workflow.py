@@ -34,7 +34,7 @@ ROLE_PROVIDERS = {
     "planner": "dashscope",       # Qwen3.8-Max
     "reader": "dashscope",        # Qwen3.8-Max
     "hypothesis": "groq",         # GPT-OSS-120B
-    "critic": "zhipu",            # GLM-4.7-Flash
+    "critic": "anthropic",       # Claude Sonnet 4.6
     "director": "anthropic",      # Claude Sonnet 4.6
 }
 ROLE_CONFIG_NAMES = {
@@ -48,7 +48,7 @@ MODEL_BY_ROLE = {
     "planner": "qwen3.8-max",
     "reader": "qwen3.8-max",
     "hypothesis": "openai/gpt-oss-120b",
-    "critic": "glm-4.7-flash",
+    "critic": "claude-sonnet-4-6",
     "director": "claude-sonnet-4-6",
 }
 
