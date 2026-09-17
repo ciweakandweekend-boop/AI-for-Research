@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Synapse / AI-for-Science Research Console</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div>
+          <div class="eyebrow">LOCAL SCIENCE SYSTEM</div>
+          <div class="brand-name">SYNAPSE <span>/</span> RESEARCH CONSOLE</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="secure-pill"><i></i> LOCAL ONLY</div>
+        <div class="run-status" id="run-status"><span class="status-dot"></span><span id="status-text">Ready for a research run</span></div>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <aside class="control-panel glass-panel">
+        <div class="panel-heading">
+          <div>
+            <div class="eyebrow">01 / CONTROL ROOM</div>
+            <h2>Research brief</h2>
+          </div>
+          <div class="orb-icon">✦</div>
+        </div>
+        <label class="field-label" for="question">Research question</label>
+        <textarea id="question" rows="7">What evidence supports partial representational alignment between human EEG and LLM reasoning states?</textarea>
+
+        <div class="field-label mode-label">Execution mode</div>
+        <div class="mode-switch" role="group" aria-label="Execution mode">
+          <button class="mode-btn active" data-mode="live"><span class="mode-glyph">◉</span><strong>LIVE</strong><small>Call providers</small></button>
+          <button class="mode-btn" data-mode="replay"><span class="mode-glyph">↻</span><strong>REPLAY</strong><small>Use cache only</small></button>
+        </div>
+        <div class="mode-note" id="mode-note">Live calls write structured results to cache for a deterministic replay.</div>
+
+        <div class="control-row">
+          <div>
+            <label class="field-label" for="timeout">Timeout</label>
+            <div class="input-with-unit"><input id="timeout" type="number" value="45" min="1" max="120" /><span>sec</span></div>
+          </div>
+          <div>
+            <label class="field-label" for="retries">Retries</label>
+            <div class="input-with-unit"><input id="retries" type="number" value="2" min="0" max="2" /><span>max</span></div>
+          </div>
+        </div>
+
+        <div class="corpus-card">
+          <div class="corpus-icon">▤</div>
+          <div><strong>Local paper corpus</strong><span>data/demo_papers · 5 PDFs</span></div>
+          <div class="ready-check">✓</div>
+        </div>
+        <button id="run-button" class="run-button"><span class="run-button-icon">▶</span><span>Start research run</span><span class="button-arrow">↗</span></button>
+        <div class="shortcut-note">Tip: run LIVE once, then switch to REPLAY for the interview demo.</div>
+      </aside>
+
+      <section class="workspace">
+        <section class="hero-row">
+          <div>
+            <div class="eyebrow">EVIDENCE-FIRST MULTI-AGENT WORKFLOW</div>
+            <h1>From question<br /><em>to defensible science.</em></h1>
+            <p class="hero-copy">Five specialized models, one structured state, zero unsupported citations.</p>
+          </div>
+          <div class="hero-metric glass-panel">
+            <div class="metric-label">RUN SIGNAL</div>
+            <div class="signal-line"><span class="signal-wave"></span><span class="signal-wave"></span><span class="signal-wave"></span><span class="signal-wave"></span><span class="signal-wave"></span><span class="signal-wave"></span><span class="signal-wave"></span></div>
+            <div class="metric-foot"><span id="metric-mode">STANDBY</span><span id="metric-id">—</span></div>
+          </div>
+        </section>
+
+        <section class="pipeline-card glass-panel">
+          <div class="section-topline">
+            <div><div class="eyebrow">02 / ORCHESTRATION</div><h2>Agent pipeline</h2></div>
+            <div class="pipeline-legend"><span><i class="legend-dot live-dot"></i> active</span><span><i class="legend-dot done-dot"></i> complete</span><span><i class="legend-dot idle-dot"></i> waiting</span></div>
+          </div>
+          <div class="pipeline" id="pipeline"></div>
+          <div class="pipeline-foot"><span id="pipeline-caption">Awaiting launch · each card will show action, duration and structured result.</span><span class="schema-chip">ResearchState / JSON</span></div>
+        </section>
+
+        <section class="detail-grid">
+          <section class="activity-card glass-panel">
+            <div class="section-topline compact"><div><div class="eyebrow">LIVE FEED</div><h2>Activity timeline</h2></div><span class="live-badge" id="feed-badge">IDLE</span></div>
+            <div class="activity-list" id="activity-list"><div class="empty-state"><span class="empty-icon">⌁</span><strong>No run yet</strong><span>Every stage will narrate its work here.</span></div></div>
+          </section>
+          <section class="trace-card glass-panel">
+            <div class="section-topline compact"><div><div class="eyebrow">OBSERVABILITY</div><h2>Trace pulse</h2></div><span class="trace-count" id="trace-count">0 calls</span></div>
+            <div class="trace-summary" id="trace-summary"><div class="trace-empty">Latency and retry telemetry will appear after the first model call.</div></div>
+          </section>
+        </section>
+
+        <section class="inspector-card glass-panel">
+          <div class="section-topline">
+            <div><div class="eyebrow">03 / STATE INSPECTOR</div><h2>Research outputs</h2></div>
+            <div class="state-counters"><span><b id="paper-count">0</b> papers</span><span><b id="evidence-count">0</b> evidence</span><span><b id="hypothesis-count">0</b> hypotheses</span></div>
+          </div>
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-tab="evidence">Evidence gate</button>
+            <button class="tab" data-tab="hypotheses">Hypotheses</button>
+            <button class="tab" data-tab="critique">Critical review</button>
+            <button class="tab" data-tab="report">Final report</button>
+            <button class="tab" data-tab="trace">Full trace</button>
+          </div>
+          <div class="tab-content" id="tab-content"><div class="empty-state"><span class="empty-icon">◌</span><strong>State inspector is ready</strong><span>Run the workflow to inspect structured outputs.</span></div></div>
+        </section>
+      </section>
+    </main>
+    <footer class="footer"><span>Synapse demo UI</span><span>Thinking time = provider round-trip latency · private chain-of-thought is never displayed</span><span>local / reproducible / cited</span></footer>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

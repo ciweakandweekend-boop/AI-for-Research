@@ -4,6 +4,8 @@ Configuration module for the AI agent laboratory.
 This code was developed with the assistance of Claude Code.
 """
 import os
+from pathlib import Path
+import re
 import yaml
 from urllib.parse import urlsplit
 from typing import Dict, List, Optional, Any
@@ -27,6 +29,10 @@ class LabConfig:
         """Load configuration from YAML file."""
         if not os.path.exists(self.config_path):
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
+
+        # Credentials belong in an untracked .env file.  Keep this loader
+        # dependency-free and never overwrite variables supplied by the shell.
+        self._load_dotenv(Path(self.config_path).resolve().parent / '.env')
         
         try:
             with open(self.config_path, 'r', encoding='utf-8-sig') as file:
@@ -37,6 +43,30 @@ class LabConfig:
         
         self._validate_config(config)
         return config
+
+    @staticmethod
+    def _load_dotenv(dotenv_path: Path) -> None:
+        """Load simple KEY=VALUE pairs without printing or persisting secrets."""
+        if not dotenv_path.exists():
+            return
+        try:
+            lines = dotenv_path.read_text(encoding='utf-8').splitlines()
+        except OSError:
+            return
+        assignment = re.compile(r'^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            match = assignment.match(line)
+            if not match:
+                continue
+            name, value = match.groups()
+            if value and value[0:1] == value[-1:] and value[0:1] in {'"', "'"}:
+                value = value[1:-1]
+            elif ' #' in value:
+                value = value.split(' #', 1)[0].rstrip()
+            os.environ.setdefault(name, value)
     
     def _validate_config(self, config: Dict[str, Any]) -> None:
         """

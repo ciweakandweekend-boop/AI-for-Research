@@ -1,78 +1,81 @@
-# Example configuration file for the AI Laboratory
+# Example configuration for the local paper-driven AI-for-Science workflow.
+# Credentials must stay outside YAML/Git. Set these variables in .env or the
+# shell environment before using --mode live:
+#   ANTHROPIC_API_KEY, QWEN_API_KEY (or DASHSCOPE_API_KEY),
+#   GROQ_API_KEY, ZHIPU_API_KEY
 
-# User settings
 user:
-  name: Your name  # Replace with your name before running
+  name: Demo Researcher
 
-# Anthropic API settings
-anthropic_api_key: "YOUR_ANTHROPIC_API_KEY_HERE"
-model: "claude-sonnet-4-6"  # Legacy default for agents without a model field
+anthropic_api_key: ""
+model: "claude-sonnet-4-6"
 
-# Fill these slots or set the indicated environment variables.
-# Each slot belongs to its named platform. Existing keys should be preserved.
 api_keys:
-  groq: ""       # GROQ_API_KEY, for Lea / openai/gpt-oss-120b
-  qwen: ""       # QWEN_API_KEY, or DASHSCOPE_API_KEY (Beijing)
-  zhipu: ""      # ZHIPU_API_KEY, for Marie / BigModel glm-4.7-flash
-  gemini: ""     # GEMINI_API_KEY, for Emmy / Google Gemini 3.8 Flash
+  groq: ""
+  qwen: ""
+  zhipu: ""
 
-# Agent definitions
 agents:
-  - name: Lea
+  - name: Planner
+    provider: dashscope
+    model: "qwen3.8-max"
+    api_key_name: qwen
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    max_tokens: 4096
+    timeout: 45
+    extra_body:
+      enable_thinking: false
+      preserve_thinking: false
+    specialty: Research planning
+    description: Breaks the question into subquestions, keywords, and analysis criteria.
+
+  # Paper Reader also uses Qwen3.8-Max over DashScope.
+  - name: Paper Reader
+    provider: dashscope
+    model: "qwen3.8-max"
+    api_key_name: qwen
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    max_tokens: 16384
+    timeout: 45
+    extra_body:
+      enable_thinking: false
+      preserve_thinking: false
+    specialty: Evidence extraction
+    description: Reads local PDF chunks and returns page-cited evidence only.
+
+  - name: Hypothesis Generator
     provider: groq
     model: "openai/gpt-oss-120b"
     api_key_name: groq
-    max_tokens: 2048
+    max_tokens: 8192
+    timeout: 45
     extra_body:
       reasoning_effort: low
       include_reasoning: false
-    specialty: Biologist
-    description: Expert in molecular biology, genetics, and biochemical pathways who excels at connecting theoretical models with experimental evidence.
-    
-  - name: Emmy
-    provider: gemini
-    model: "gemini-3.8-flash"
-    api_key_name: gemini
-    base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
-    max_tokens: 16384
-    extra_body:
-      reasoning_effort: low
-    system_prompt: >-
-      You are a critical scientific reviewer.
-      Check evidence, methodology, citations and overclaiming.
-    specialty: Mathematician
-    description: Specialist in statistical analysis who helps the team separate signal from noise in complex datasets.
-    
-  - name: Marie
+    specialty: Scientific hypothesis generation
+    description: Converts validated evidence into mechanisms and testable predictions.
+
+  - name: Critical Reviewer
     provider: zhipu
     model: "glm-4.7-flash"
     api_key_name: zhipu
-    base_url: "https://open.bigmodel.cn/api/paas/v4/"
-    max_tokens: 16384
+    base_url: "https://open.bigmodel.cn/api/paas/v4"
+    max_tokens: 8192
+    timeout: 45
     extra_body:
       thinking:
         type: enabled
       temperature: 0.2
     system_prompt: >-
-      You are a skeptical scientific reviewer.
-      Identify unsupported claims, methodological weaknesses,
-      confounding variables, and missing evidence.
-    specialty: Physicist
-    description: Expert in quantum mechanics and simulation who brings first principles thinking to every problem.
-    
-  - name: Ada
+      Identify unsupported claims, methodological weaknesses, confounding
+      variables, and missing evidence. Return only the required JSON object.
+    specialty: Critical scientific review
+    description: Challenges hypotheses and flags claims that the evidence cannot support.
+
+  - name: Scientific Director
     provider: anthropic
     model: "claude-sonnet-4-6"
-    specialty: Computer Scientist
-    description: Specialist in machine learning and algorithms who translates complex concepts into working code.
-
-  - name: Cassandra
-    provider: dashscope
-    model: "qwen3.8-max"
-    api_key_name: qwen
-    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    extra_body:
-      enable_thinking: false
-      preserve_thinking: false
-    specialty: PI (Principal Investigator)
-    description: As the lab director, you guide discussions toward productive outcomes while encouraging intellectual exploration.
+    max_tokens: 12288
+    timeout: 45
+    specialty: Scientific synthesis
+    description: Produces the final report with evidence, limitations, and next experiment.
