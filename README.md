@@ -4,14 +4,45 @@ An evidence-first, local-paper multi-agent system for AI-for-Science research.
 
 The project turns a research question and a local PDF corpus into a traceable research report:
 
-```text
-research question
-        ↓
-planner → local PDF loader → paper reader → hypothesis generator
-                                                ↓
-                         critical reviewer → scientific director
-                                                ↓
-                 evidence-backed report + limitations + next experiment
+```mermaid
+flowchart TD
+    Q["Research Question<br/>Input: user-defined scientific question<br/>Output: question string"]
+
+    P["Planner<br/>Purpose: 把模糊研究问题拆解成可执行的分析计划<br/>Input: question<br/>Output: subquestions · keywords · analysis criteria"]
+
+    L["PDF Loader<br/>Purpose: 确定性读取本地 PDF，建立可回溯的论文文本片段<br/>Input: data/demo_papers/*.pdf<br/>Output: paper_id · page · text · chunk_id"]
+
+    R["Paper Reader × N<br/>Purpose: 从每篇论文原文中提取可验证证据，而不是猜测或总结结论<br/>Input: research plan + one paper's page-aware chunks<br/>Output: claim_id · claim · quote · paper_id · page · confidence"]
+
+    G{"Evidence Gate<br/>检查 evidence 是否来自至少两篇不同论文"}
+
+    H["Hypothesis Generator — Initial Call<br/>Purpose: 基于已验证 evidence 提出可测试的科学假设<br/>Input: question + evidence[]<br/>Output: hypothesis_id · hypothesis · mechanism · predictions · evidence_ids"]
+
+    C["Critical Reviewer<br/>Purpose: 审查假设的逻辑、证据支持程度、过度外推和缺失控制<br/>Input: evidence[] + hypotheses[]<br/>Output: status · findings · unsupported_claims · required_repairs"]
+
+    J{"Critic Status<br/>pass / revise / reject"}
+
+    HR["Hypothesis Generator — Repair Call<br/>Purpose: 根据 Critic 的 findings 和 required repairs 修正原有假设<br/>Input: critique + previous hypotheses + evidence[]<br/>Output: revised hypotheses with evidence_ids<br/>Maximum: one repair call"]
+
+    D["Scientific Director<br/>Purpose: 综合研究计划、论文证据、假设和批判意见，形成最终科学报告<br/>Input: plan + evidence[] + hypotheses[] + critique<br/>Output — Final Report:<br/>summary · evidence citations · limitations · next experiment"]
+
+    STOP["Stop Run<br/>Purpose: 阻止证据不足的研究进入假设生成阶段<br/>Reason: evidence 未覆盖至少两篇论文"]
+
+    Q --> P
+    P --> L
+    L --> R
+    R --> G
+
+    G -->|No| STOP
+    G -->|Yes| H
+
+    H --> C
+    C --> J
+
+    J -->|"revise + repair unused"| HR
+    HR --> D
+
+    J -->|"pass / reject / repair already used"| D
 ```
 
 The primary demo question is:
