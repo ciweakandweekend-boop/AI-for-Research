@@ -79,6 +79,8 @@ An evidence record must contain:
 The same contract is represented in [schemas/research_state.schema.json](schemas/research_state.schema.json) and enforced again in [src/state.py](src/state.py). Claims without a known paper and page cannot pass the final report validation. The current Reader stage is called separately for each local paper and requires evidence coverage from at least two papers before hypotheses are generated.
 
 ## Interactive UI
+<img width="1890" height="771" alt="image" src="https://github.com/user-attachments/assets/b90848aa-fa6f-428b-a519-98b62bde6f15" />
+<img width="1883" height="859" alt="AdobeExpressPhotos_ac6c4b95273543bdad46505b7f5d5754_CopyEdited" src="https://github.com/user-attachments/assets/2af53776-9e60-4b8f-9207-248aeb9fd30f" />
 
 The local UI is a dependency-light Python server plus static HTML/CSS/JavaScript. It shows:
 
