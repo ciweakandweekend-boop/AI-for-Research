@@ -6,27 +6,27 @@ The project turns a research question and a local PDF corpus into a traceable re
 
 ```mermaid
 flowchart TD
-    Q["Research Question<br/>Input: user-defined scientific question<br/>Output: question string"]
+    Q["<b>Research Question</b><br/><b>Input:</b> user-defined scientific question<br/><b>Output:</b> question string"]
 
-    P["Planner<br/>Purpose: 把模糊研究问题拆解成可执行的分析计划<br/>Input: question<br/>Output: subquestions · keywords · analysis criteria"]
+    P["<b>Planner</b><br/><b>Purpose:</b> Convert a broad research question into an executable analysis plan<br/><b>Input:</b> question<br/><b>Output:</b> subquestions · keywords · analysis criteria"]
 
-    L["PDF Loader<br/>Purpose: 确定性读取本地 PDF，建立可回溯的论文文本片段<br/>Input: data/demo_papers/*.pdf<br/>Output: paper_id · page · text · chunk_id"]
+    L["<b>PDF Loader</b><br/><b>Purpose:</b> Deterministically read local PDFs and create traceable paper text chunks<br/><b>Input:</b> data/demo_papers/*.pdf<br/><b>Output:</b> paper_id · page · text · chunk_id"]
 
-    R["Paper Reader × N<br/>Purpose: 从每篇论文原文中提取可验证证据，而不是猜测或总结结论<br/>Input: research plan + one paper's page-aware chunks<br/>Output: claim_id · claim · quote · paper_id · page · confidence"]
+    R["<b>Paper Reader × N</b><br/><b>Purpose:</b> Extract verifiable evidence from each paper instead of guessing or summarizing unsupported conclusions<br/><b>Input:</b> research plan + one paper's page-aware chunks<br/><b>Output:</b> claim_id · claim · quote · paper_id · page · confidence"]
 
-    G{"Evidence Gate<br/>检查 evidence 是否来自至少两篇不同论文"}
+    G{"<b>Evidence Gate</b><br/>Check whether evidence comes from at least two distinct papers"}
 
-    H["Hypothesis Generator — Initial Call<br/>Purpose: 基于已验证 evidence 提出可测试的科学假设<br/>Input: question + evidence[]<br/>Output: hypothesis_id · hypothesis · mechanism · predictions · evidence_ids"]
+    H["<b>Hypothesis Generator — Initial Call</b><br/><b>Purpose:</b> Propose testable scientific hypotheses from validated evidence<br/><b>Input:</b> question + evidence[]<br/><b>Output:</b> hypothesis_id · hypothesis · mechanism · predictions · evidence_ids"]
 
-    C["Critical Reviewer<br/>Purpose: 审查假设的逻辑、证据支持程度、过度外推和缺失控制<br/>Input: evidence[] + hypotheses[]<br/>Output: status · findings · unsupported_claims · required_repairs"]
+    C["<b>Critical Reviewer</b><br/><b>Purpose:</b> Audit hypothesis logic, evidential support, overclaiming, and missing controls<br/><b>Input:</b> evidence[] + hypotheses[]<br/><b>Output:</b> status · findings · unsupported_claims · required_repairs"]
 
-    J{"Critic Status<br/>pass / revise / reject"}
+    J{"<b>Critic Status</b><br/>pass / revise / reject"}
 
-    HR["Hypothesis Generator — Repair Call<br/>Purpose: 根据 Critic 的 findings 和 required repairs 修正原有假设<br/>Input: critique + previous hypotheses + evidence[]<br/>Output: revised hypotheses with evidence_ids<br/>Maximum: one repair call"]
+    HR["<b>Hypothesis Generator — Repair Call</b><br/><b>Purpose:</b> Revise the hypotheses using the Critic's findings and required repairs<br/><b>Input:</b> critique + previous hypotheses + evidence[]<br/><b>Output:</b> revised hypotheses with evidence_ids<br/>Maximum: one repair call"]
 
-    D["Scientific Director<br/>Purpose: 综合研究计划、论文证据、假设和批判意见，形成最终科学报告<br/>Input: plan + evidence[] + hypotheses[] + critique<br/>Output — Final Report:<br/>summary · evidence citations · limitations · next experiment"]
+    D["<b>Scientific Director</b><br/><b>Purpose:</b> Synthesize the research plan, paper evidence, hypotheses, and critique into a final scientific report<br/><b>Input:</b> plan + evidence[] + hypotheses[] + critique<br/><b>Output — Final Report:</b><br/>summary · evidence citations · limitations · next experiment"]
 
-    STOP["Stop Run<br/>Purpose: 阻止证据不足的研究进入假设生成阶段<br/>Reason: evidence 未覆盖至少两篇论文"]
+    STOP["<b>Stop Run</b><br/><b>Purpose:</b> Block the workflow when evidence coverage is insufficient<br/><b>Reason:</b> evidence does not cover at least two papers"]
 
     Q --> P
     P --> L
